@@ -140,7 +140,7 @@ class PromptDirectionStaged:
             dirfit_mask: np.ndarray = None,
         ) -> None:
             """
-            Digests position and time information frmo a singular event.
+            Digests position and time information from a singular event.
 
             Parameters
             ----------
