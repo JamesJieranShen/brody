@@ -41,7 +41,7 @@ class PromptDirectionStaged:
             return _self
 
         def save(self, f: str):
-            with open(f, "ab") as fout:
+            with open(f, "wb") as fout:
                 pickle.dump(self, fout)
 
         @classmethod
