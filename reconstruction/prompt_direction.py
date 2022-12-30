@@ -21,19 +21,19 @@ class PromptDirectionStaged:
                 object to load from.
                 """
             super().__init__()
-                
+
             if isinstance(f, str):
                 coords = self.drain_pickle(f)
             elif isinstance(f, dict):
                 coords = f
             else:
                 raise TypeError("f must be a dict or a filename")
-            
-            for k,v in coords.items():
+
+            for k, v in coords.items():
                 if reset:
                     coords[k] = v.reset(v)
                 self[k] = v
-            
+
         def __add__(self, other):
             _self = deepcopy(self)
             for k in self:
@@ -52,7 +52,7 @@ class PromptDirectionStaged:
                     coords[k] = coords[k].reset(coords[k])
 
             return coords
-        
+
         @staticmethod
         def drain_pickle(filename: str):
             with open(filename, "rb") as fin:
@@ -63,14 +63,14 @@ class PromptDirectionStaged:
                 except EOFError:
                     pass
                 return coords
-        
+
         def reset(self):
             for k in self:
                 self[k] = self[k].reset(self[k])
 
         def as_dict(self):
             return dict(self)
-        
+
         def __repr__(self):
             return str(self.as_dict())
 
@@ -110,11 +110,13 @@ class PromptDirectionStaged:
 
             # apply coarse factor for 2D histogram binning
             Ncherbins = int(cf * len(cosalpha_bins))
-            self.dirtime_cosalpha_bins = np.linspace(min(cosalpha_bins), max(cosalpha_bins), Ncherbins)
+            self.dirtime_cosalpha_bins = np.linspace(
+                min(cosalpha_bins), max(cosalpha_bins), Ncherbins)
             Ntresbins = int(cf * len(tresid_bins))
             self.dirtime_tresid_bins = np.linspace(min(tresid_bins), max(tresid_bins), Ntresbins)
-            self.dirtime_counts, self.dirtime_xedges, self.dirtime_yedges = np.histogram2d([], [], bins=[self.dirtime_cosalpha_bins, self.dirtime_tresid_bins])
-            
+            self.dirtime_counts, self.dirtime_xedges, self.dirtime_yedges = np.histogram2d(
+                [], [], bins=[self.dirtime_cosalpha_bins, self.dirtime_tresid_bins])
+
         def __add__(self, other):
             """Add two coordinators together."""
             # check that properties are equal between the two coordinators
@@ -123,7 +125,7 @@ class PromptDirectionStaged:
                     continue
                 if np.any(self.__dict__[k] != other.__dict__[k]):
                     raise ValueError(f'Property mismatch ({k})')
-            
+
             _self = deepcopy(self)  # let's not modify the original object
             _self.tresid_counts += other.tresid_counts
             _self.cosalpha_counts += other.cosalpha_counts
@@ -173,7 +175,9 @@ class PromptDirectionStaged:
                 tresid = tresid
 
             self.tresid_counts += np.histogram(tresid, bins=self.tresid_bins)[0]
-            self.dirtime_counts += np.histogram2d(cosalpha, tresid, bins=[self.cosalpha_bins, self.tresid_bins])[0]
+            counts_2d = np.histogram2d(cosalpha, tresid,
+                                                  bins=[self.dirtime_cosalpha_bins, self.dirtime_tresid_bins])[0]
+            self.dirtime_counts += counts_2d
             # apply cut to 1D cosalpha (NOTE: cut is not applied to cosalpha in the 2D histogram above)
             if self.prompt_cut is not None:
                 cosalpha = cosalpha[tresid < self.prompt_cut]
@@ -190,7 +194,8 @@ class PromptDirectionStaged:
             true_dir = ev.vertices[0].dir
             true_time = ev.vertices[0].t0
 
-            hit_channels, hit_positions, hit_times = simple_daq(ev, db.det.channel_index_to_position, tts=db.theia_pmt_tts)
+            hit_channels, hit_positions, hit_times = simple_daq(
+                ev, db.det.channel_index_to_position, tts=db.theia_pmt_tts)
             if pmt_type:
                 dirfit_mask = getattr(db, f"dirfit_mask_{pmt_type[0]}")[hit_channels]
             else:
@@ -216,7 +221,8 @@ class PromptDirectionStaged:
         def reset(cls, coord):
             assert coord.__class__ is cls, "To be reset, the coordinator must be of type PathFitter.Coordinator."
 
-            new_coord = cls(coord.group_velocity, coord.prompt_cut, coord.tresid_bins, coord.cosalpha_bins)
+            new_coord = cls(coord.group_velocity, coord.prompt_cut,
+                            coord.tresid_bins, coord.cosalpha_bins)
 
             attrs = [
                 "tresid_counts",
@@ -234,13 +240,15 @@ class PromptDirectionStaged:
 
     def __init__(self, coords: Coordinators, prompt_cut, group_velocity):
         self.prompt_cut = prompt_cut
+        # FIXME: is this import necessary? Group velocity is already defined in the coordinator
         self.group_velocity_l, self.group_velocity_s = group_velocity
         # Note that one additional PromptDirectionStaged.Coordinator is required for each PMT type.
         # i.e., for Dichroicon studies, a long and short PMT Coordinators should be
         # created.
         self.nlls = {}
-        for k,coord in coords.items():
-            self.nlls[k] = { _k: _v for _k, _v in zip(["tresid", "cosalpha", "dirtime"], coord.create_nlls()) }
+        for k, coord in coords.items():
+            self.nlls[k] = {_k: _v for _k, _v in zip(
+                ["tresid", "cosalpha", "dirtime"], coord.create_nlls())}
 
     def fit(
         self,
@@ -292,7 +300,7 @@ class PromptDirectionStaged:
         T = hit_times - fit_vt
         tresid = T - D / self.group_velocity_l
         prompt_mask = tresid < self.prompt_cut
-        if len(hit_positions)>0 and prompt_mask.any():
+        if len(hit_positions) > 0 and prompt_mask.any():
 
             """
             1D direction fit
@@ -311,9 +319,12 @@ class PromptDirectionStaged:
             )
 
             theta, phi = m_dir.x
-            dvec1D = np.asarray([np.cos(phi) * np.sin(theta), np.sin(phi) * np.sin(theta), np.cos(theta)])
+            dvec1D = np.asarray(
+                [np.cos(phi) * np.sin(theta),
+                 np.sin(phi) * np.sin(theta),
+                 np.cos(theta)])
             res["dir1D"] = dvec1D
-            
+
             # """
             # 2D direction fit
             # uses:
@@ -347,5 +358,5 @@ class PromptDirectionStaged:
         else:
             logger.warn("no prompt hits on long PMTs found. exiting direction fit.")
             res["dir1D"] = None
-            # res["dir1D_old"] = 
+            # res["dir1D_old"] =
         return res
