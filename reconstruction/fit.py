@@ -3,6 +3,7 @@ from scipy.optimize import minimize, dual_annealing, differential_evolution
 import jax
 import jax.numpy as jnp
 
+
 def fit_position_time(
     positions,
     times,
@@ -70,13 +71,13 @@ def fit_position_time(
             # PD = (P.T / D).T
             # todo: include directionality correction here (^d_i * ^r_i) (see notes) on p. 6. This will be
             # todo: the three-vector for the direction of the PMT dotted with PD
-            D = np.where(D>0, D, 1e-4)
+            D = np.where(D > 0, D, 1e-4)
             solid_angle_prob = Nscint * (1 / (4 * np.pi)) * np.pi * rc**2 / D**2
             nllsum += np.sum(-np.log(solid_angle_prob) + solid_angle_prob * -nll)
 
         if include_attenuation:
             raise NotImplementedError("Attenuation has yet to be implemented")
-        
+
         return nllsum
 
     if return_nll:
@@ -164,10 +165,13 @@ def fit_direction(
 
     def nll_dir(par):
         theta, phi = par
-        dvec = np.asarray([np.cos(phi) * np.sin(theta), np.sin(phi) * np.sin(theta), np.cos(theta)])
+        dvec = np.asarray(
+            [np.cos(phi) * np.sin(theta),
+             np.sin(phi) * np.sin(theta),
+             np.cos(theta)])
         cosalpha = np.sum(PD * dvec, axis=1)
         nll = cosalpha_nll(cosalpha)  # "g(cos[alpha])"
-        nllsum = np.sum(nll)             
+        nllsum = np.sum(nll)
         if include_solid_angle:
             # todo: include directionality correction here (^d_i * ^r_i) (see notes) on p. 6
             nllsum += np.sum(-np.log(solid_angle_prob) + solid_angle_prob * -nll)
@@ -206,7 +210,8 @@ def fit_direction(
         return dual_annealing(nll_dir, ((0, np.pi), (-np.pi, np.pi)))
     else:
         raise Exception("Method not implemented: " + method)
-    
+
+
 def fit_direction_accelerated(
     pmt_mask: jnp.ndarray,
     vpos: jnp.ndarray,
@@ -221,6 +226,7 @@ def fit_direction_accelerated(
     rc=20 * 25.4,
 ):
     """
+    ! DOES NOT WORK
     Runs a direction fit using a fixed position `pos` and a callable
     object to evaluate negative log likelihoods for cos(theta) values.
 
@@ -264,14 +270,17 @@ def fit_direction_accelerated(
     PD = (P.T / D).T
     solid_angle_prob = Ncher * (1 / (4 * np.pi)) * np.pi * rc**2 / D**2
 
-
     # ! TODO: JIT this function!
+
     def nll_dir(par):
         theta, phi = par
-        dvec = np.asarray([np.cos(phi) * np.sin(theta), np.sin(phi) * np.sin(theta), np.cos(theta)])
+        dvec = np.asarray(
+            [np.cos(phi) * np.sin(theta),
+             np.sin(phi) * np.sin(theta),
+             np.cos(theta)])
         cosalpha = np.sum(PD * dvec, axis=1)
         nll = cosalpha_nll(cosalpha)  # "g(cos[alpha])"
-        nllsum = np.sum(nll)             
+        nllsum = np.sum(nll)
         if include_solid_angle:
             # todo: include directionality correction here (^d_i * ^r_i) (see notes) on p. 6
             nllsum += np.sum(-np.log(solid_angle_prob) + solid_angle_prob * -nll)
@@ -312,7 +321,6 @@ def fit_direction_accelerated(
         raise Exception("Method not implemented: " + method)
 
 
-
 def fit_direction_2D(
     positions,
     vpos,
@@ -339,7 +347,10 @@ def fit_direction_2D(
 
     def nll_postime(par):
         theta, phi = par
-        dvec = np.asarray([np.cos(phi) * np.sin(theta), np.sin(phi) * np.sin(theta), np.cos(theta)])
+        dvec = np.asarray(
+            [np.cos(phi) * np.sin(theta),
+             np.sin(phi) * np.sin(theta),
+             np.cos(theta)])
 
         nll = dirtime_nll(tresid)
         nllsum = np.sum(nll)

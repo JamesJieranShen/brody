@@ -1,7 +1,7 @@
 from typing import Callable
 import numpy as np
 from scipy.optimize import curve_fit
-from scipy.interpolate import interp2d
+from scipy.interpolate import RectBivariateSpline
 import matplotlib.pyplot as plt
 
 from .utils import polyform
@@ -159,16 +159,17 @@ class NLL2D(object):
         # Create interpolation function
         tresid_centers = (tresid_edges[:-1] + tresid_edges[1:]) / 2
         self.cosalpha_centers = (cosalpha_edges[:-1] + cosalpha_edges[1:]) / 2
-        self.interp_fn = interp2d(self.cosalpha_centers, tresid_centers,
-                                  self.nll_values, kind='linear')
+        self.interp_fn = RectBivariateSpline(self.cosalpha_centers, tresid_centers,
+                                  self.nll_values, kx=1, ky=1, s=0)
         if pull is None:
             # By default, use bin width as pull distance
             self.pull = tresid_edges[1] - tresid_edges[0]
 
-    def __call__(self, cosAlpha, tresid):
+    def __call__(self, tresid, cosAlpha):
         # NOTE: Vectorization needs to be guaranteed for this function
-        assert (cosAlpha >= -1) and (cosAlpha <= 1)
-        value = self.interp_fn(cosAlpha, tresid)
+        assert np.all(cosAlpha >= -1) and np.all(cosAlpha <= 1)
+        # Always assume input are two vectors of all desired calculations
+        value = self.interp_fn(cosAlpha, tresid, grid=False)
         value = np.where(tresid < self.tresid_edges[0],
                          np.interp(cosAlpha, self.cosalpha_centers, self.nll_values[:, 0]),
                          value)
