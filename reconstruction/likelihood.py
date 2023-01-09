@@ -1,7 +1,8 @@
-from typing import Callable
+from typing import Callable, Tuple
 import numpy as np
 from scipy.optimize import curve_fit
 from scipy.interpolate import RectBivariateSpline
+from scipy.ndimage import gaussian_filter
 import matplotlib.pyplot as plt
 
 from .utils import polyform
@@ -135,15 +136,14 @@ class CosAlphaNLL(NLL1D):
 
 class NLL2D(object):
     cosalpha_edges: np.ndarray
-    cosalpha_centers: np.ndarray
     tresid_edges: np.ndarray
     nll_values: np.ndarray
     interp_fn: Callable
-    pull: float
+    pull: Tuple[float, float] # (left, right)
 
     def __init__(
             self, counts: np.ndarray, cosalpha_edges: np.ndarray, tresid_edges: np.ndarray,
-            pull=None) -> None:
+            pull_npts=(10, 100), smoothing=True) -> None:
         # X is cosAlpha, Y is tresid
         assert counts.shape == (len(cosalpha_edges) - 1, len(tresid_edges) - 1)
         self.cosalpha_edges = cosalpha_edges
@@ -156,14 +156,23 @@ class NLL2D(object):
         counts = np.where(counts == 0, 1, counts)
         counts /= np.sum(counts)
         self.nll_values = -np.log(counts / np.sum(counts))
+        if smoothing:
+            self.nll_values = gaussian_filter(self.nll_values, sigma=2)
         # Create interpolation function
         tresid_centers = (tresid_edges[:-1] + tresid_edges[1:]) / 2
-        self.cosalpha_centers = (cosalpha_edges[:-1] + cosalpha_edges[1:]) / 2
-        self.interp_fn = RectBivariateSpline(self.cosalpha_centers, tresid_centers,
-                                  self.nll_values, kx=1, ky=1, s=0)
-        if pull is None:
-            # By default, use bin width as pull distance
-            self.pull = tresid_edges[1] - tresid_edges[0]
+        cosalpha_centers = (cosalpha_edges[:-1] + cosalpha_edges[1:]) / 2
+        self.interp_fn = RectBivariateSpline(cosalpha_centers, tresid_centers,
+                                             self.nll_values, kx=1, ky=1, s=0)
+
+        # Calculate Pull
+        # NOTE: Pull on the left can be very large, causing the NLL to blow up. Could consider adding a ceiling if this
+        # becomes a problem.
+        nll_mean = np.mean(self.nll_values, axis=0)
+        p = np.polyfit(tresid_centers[:pull_npts[0]], nll_mean[:pull_npts[0]], 1)
+        left_pull = -p[0]
+        p = np.polyfit(tresid_centers[-pull_npts[1]:], nll_mean[-pull_npts[1]:], 1)
+        right_pull = p[0]
+        self.pull = (left_pull, right_pull)
 
     def __call__(self, tresid, cosAlpha):
         # NOTE: Vectorization needs to be guaranteed for this function
@@ -171,16 +180,16 @@ class NLL2D(object):
         # Always assume input are two vectors of all desired calculations
         value = self.interp_fn(cosAlpha, tresid, grid=False)
         value = np.where(tresid < self.tresid_edges[0],
-                         np.interp(cosAlpha, self.cosalpha_centers, self.nll_values[:, 0]),
+                         self.interp_fn(cosAlpha, self.tresid_edges[0], grid=False),
                          value)
         value = np.where(tresid > self.tresid_edges[-1],
-                         np.interp(cosAlpha, self.cosalpha_centers, self.nll_values[:, -1]),
+                         self.interp_fn(cosAlpha, self.tresid_edges[-1], grid=False),
                          value)
-        distance_to_edge = np.where(
+        distance_to_edge_l = np.where(
             tresid < self.tresid_edges[0],
-            self.tresid_edges[0] - tresid, 0) + np.where(
+            self.tresid_edges[0] - tresid, 0)
+        distance_to_edge_r = np.where(
             tresid > self.tresid_edges[-1],
             tresid - self.tresid_edges[-1], 0)
-        assert np.all(distance_to_edge >= 0)  # Sanity check, can remove
-        value += distance_to_edge * self.pull
+        value += distance_to_edge_l * self.pull[0] + distance_to_edge_r * self.pull[1]
         return value

@@ -214,7 +214,7 @@ class PromptDirectionStaged:
         def create_nlls(self):
             tresid_nll = NLL1D(self.tresid_counts, self.tresid_edges)
             cosalpha_nll = CosAlphaNLL(self.cosalpha_counts, self.cosalpha_edges)
-            costresid_nll = NLL2D()
+            costresid_nll = None
             return tresid_nll, cosalpha_nll, costresid_nll
 
         @classmethod
