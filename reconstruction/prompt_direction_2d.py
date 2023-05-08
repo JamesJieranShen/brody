@@ -10,16 +10,17 @@ class PromptDirection2D:
     nll_long: NLL2D
     nll_short: NLL2D
 
-    def __init__(self, coords: PromptDirectionStaged.Coordinators, smoothing=False) -> None:
+    def __init__(self, coords: PromptDirectionStaged.Coordinators, fitLongNLL=True) -> None:
         self.coords = coords
         # X is cosAlpha, Y is tresid
+        longNLLFitOrder = 3 if fitLongNLL else None
         self.nll_long = NLL2D(
             coords['long'].dirtime_counts, coords['long'].dirtime_xedges,
-            coords['long'].dirtime_yedges, smoothing=smoothing)
+            coords['long'].dirtime_yedges, cosFitOrder=longNLLFitOrder)
         self.nll_short = NLL2D(
             coords['short'].dirtime_counts,
             coords['short'].dirtime_xedges,
-            coords['short'].dirtime_yedges, smoothing=smoothing)
+            coords['short'].dirtime_yedges)
 
     def computeTimeResidualCosAlpha(self, hypothesis, positions, times, longMask, shortMask):
         x, y, z, t0, theta, phi = hypothesis
@@ -63,7 +64,7 @@ class PromptDirection2D:
         from scipy.optimize import minimize
         # Calculate seed
         seed_pos = np.mean(positions[times < 100], axis=0)
-        seed_dir = np.mean(positions[shortMask] - seed_pos, axis=0)
+        seed_dir = np.mean(positions[longMask] - seed_pos, axis=0)
         seed_dir /= np.linalg.norm(seed_dir)
         seed_theta = np.arccos(seed_dir[2])
         seed_phi = np.arctan2(seed_dir[1], seed_dir[0])

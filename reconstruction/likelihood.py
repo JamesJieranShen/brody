@@ -143,7 +143,7 @@ class NLL2D(object):
 
     def __init__(
             self, counts: np.ndarray, cosalpha_edges: np.ndarray, tresid_edges: np.ndarray,
-            pull_npts=(10, 100), smoothing=True) -> None:
+            pull_npts=(10, 100), cosFitOrder=None, cosFitTol=9) -> None:
         # X is cosAlpha, Y is tresid
         assert counts.shape == (len(cosalpha_edges) - 1, len(tresid_edges) - 1)
         self.cosalpha_edges = cosalpha_edges
@@ -156,8 +156,8 @@ class NLL2D(object):
         counts = np.where(counts == 0, 1, counts)
         counts /= np.sum(counts)
         self.nll_values = -np.log(counts / np.sum(counts))
-        if smoothing:
-            self.nll_values = gaussian_filter(self.nll_values, sigma=2)
+        if cosFitOrder is not None:
+            self.fit_cosalpha(cosFitOrder, cosFitTol)
         # Create interpolation function
         tresid_centers = (tresid_edges[:-1] + tresid_edges[1:]) / 2
         cosalpha_centers = (cosalpha_edges[:-1] + cosalpha_edges[1:]) / 2
@@ -176,7 +176,7 @@ class NLL2D(object):
 
     def __call__(self, tresid, cosAlpha):
         # NOTE: Vectorization needs to be guaranteed for this function
-        assert np.all(cosAlpha >= -1) and np.all(cosAlpha <= 1)
+        assert np.all(cosAlpha >= -1) and np.all(cosAlpha <= 1), f"cosAlpha must be in [-1, 1], max is {np.max(cosAlpha)}, min is {np.min(cosAlpha)}"
         # Always assume input are two vectors of all desired calculations
         value = self.interp_fn(cosAlpha, tresid, grid=False)
         value = np.where(tresid < self.tresid_edges[0],
@@ -193,3 +193,35 @@ class NLL2D(object):
             tresid - self.tresid_edges[-1], 0)
         value += distance_to_edge_l * self.pull[0] + distance_to_edge_r * self.pull[1]
         return value
+
+    def fit_cosalpha(self, order, tol):
+        # Fit a polynomial to the cosAlpha axis
+        assert order >= 0
+        if order == 0:
+            return
+        x_centers = self.cosalpha_edges[:-1] + np.diff(self.cosalpha_edges) / 2
+        y_centers = self.tresid_edges[:-1] + np.diff(self.tresid_edges) / 2
+        min_idx = np.argmin(self.nll_values)
+        min_idx = np.unravel_index(min_idx, self.nll_values.shape)
+        cher_peak = (x_centers[min_idx[0]])
+
+        def fitCosDistribution(x, y, cherPeak, order, tol=9):
+            def polyform(x, *p):
+                peak = p[0]
+                offset = p[1]
+                order = (len(p) - 2) // 2
+                # Enforce that the two polynomials evaluate to the same value at the cher peak to ensure continuity.
+                paramsLeft = np.concatenate((p[2:order+2], [offset]))
+                paramsRight = np.concatenate((p[order+2:], [offset]))
+                return np.where(x < peak, np.polyval(paramsLeft, x - peak), np.polyval(paramsRight, x - peak))
+            if np.min(y) < tol:
+                p, _ = curve_fit(polyform, x, y, p0 = np.concatenate([[cherPeak], np.zeros(order*2 + 1)]))
+                return lambda x: polyform(x, *p)
+            else:
+                p = np.polyfit(x, y, order)
+                return lambda x: np.polyval(p, x)
+
+        fittedNLL = np.zeros(self.nll_values.shape)
+        for yidx in range(len(self.nll_values[0, :])):
+            fitFunction = fitCosDistribution(x_centers, self.nll_values[:, yidx], cher_peak, order, tol=tol)
+            fittedNLL[:, yidx] = fitFunction(x_centers)
